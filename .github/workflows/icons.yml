@@ -1,0 +1,39 @@
+name: Generate PWA PNG icons
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - icon.svg
+      - .github/workflows/icons.yml
+permissions:
+  contents: write
+jobs:
+  icons:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cairosvg pillow
+      - name: Generate icon files and update manifest
+        run: |
+          python - <<'PY'
+          import cairosvg,json
+          from PIL import Image
+          from io import BytesIO
+          for size in (192,512):
+              raw=cairosvg.svg2png(url='icon.svg',output_width=size,output_height=size)
+              Image.open(BytesIO(raw)).convert('RGBA').save(f'icon-{size}.png')
+          m=json.load(open('manifest.webmanifest'))
+          m['icons']=[{'src':'./icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},{'src':'./icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'},{'src':'./icon-512.png','sizes':'512x512','type':'image/png','purpose':'maskable'}]
+          open('manifest.webmanifest','w').write(json.dumps(m,ensure_ascii=False,indent=2)+'\n')
+          p='index.html';s=open(p).read().replace('href="./icon.svg"><title>','href="./icon-192.png"><title>');open(p,'w').write(s)
+          p='sw.js';s=open(p).read().replace("kompas-v3","kompas-v4").replace("'./icon.svg'","'./icon.svg','./icon-192.png','./icon-512.png'");open(p,'w').write(s)
+          PY
+      - name: Commit generated icons
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add icon-192.png icon-512.png manifest.webmanifest index.html sw.js
+          git diff --cached --quiet || (git commit -m "Generate installable PWA PNG icons" && git push)
